@@ -16,18 +16,23 @@ class SlackReport(chainer.training.extensions.PrintReport):
         self._channel_id = channel_id
 
         self._ts = None
+        self._completed = False
 
         self._label = label
         if label is None:
             self._label = " ".join(sys.argv)
 
     def _print(self, observation):
-        super(SlackReport, self)._print(observation)
+        if observation:     # None case: called from finalize
+            super(SlackReport, self)._print(observation)
 
         s = self._out.getvalue().replace('\x1b[J', '')  # Remove clear screen
         s = "```{}```".format(s)
+
         if self._label:
             s = "{}\n{}".format(self._label, s)
+        if self._completed:
+            s = "[Completed] " + s
 
         params = {
             'token': self._access_token,
@@ -50,3 +55,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
             res = json.loads(res.text)
             if not res['ok']:
                 return
+
+    def finalize(self):
+        self._completed = True
+        self._print(None)
