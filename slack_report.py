@@ -8,7 +8,7 @@ import chainer
 
 
 class SlackReport(chainer.training.extensions.PrintReport):
-    def __init__(self, entries, access_token, channel_id,
+    def __init__(self, access_token, channel_id, entries,
                  label=None, log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
