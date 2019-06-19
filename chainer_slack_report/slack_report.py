@@ -32,7 +32,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
         if self._label:
             s = "{}\n{}".format(self._label, s)
         if self._completed:
-            s = "[Completed] " + s
+            s = "*[Completed]* " + s
 
         params = {
             'token': self._access_token,
