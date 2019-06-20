@@ -14,6 +14,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
             entries, log_report=log_report, out=io.StringIO())
         self._access_token = access_token
         self._channel_id = channel_id
+        self._available = self._check_valid_token(access_token, channel_id)
 
         self._ts = None
         self._completed = False
@@ -22,9 +23,24 @@ class SlackReport(chainer.training.extensions.PrintReport):
         if label is None:
             self._label = " ".join(sys.argv)
 
+    @property
+    def available(self):
+        return self._available
+
+    def _check_valid_token(self, access_token, channel_id):
+        if not access_token or not channel_id:    # None or empty
+            return False
+
+        params = {'token': access_token}
+        res = requests.post('https://slack.com/api/auth.test', data=params)
+        return res.status_code == 200 and json.loads(res.text)['ok']
+
     def _print(self, observation):
         if observation:     # None case: called from finalize
             super(SlackReport, self)._print(observation)
+
+        if not self._available:
+            return
 
         s = self._out.getvalue().replace('\x1b[J', '')  # Remove clear screen
         s = "```{}```".format(s)
