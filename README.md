@@ -11,7 +11,8 @@ from chainer_slack_report import SlackReport
 r = SlackReport(os.environ.get("SLACK_ACCESS_TOKEN", None),
                 os.environ.get("SLACK_CHANNEL_ID", None),
                 ['epoch', 'main/loss', 'validation/main/loss',
-                 'main/accuracy', 'validation/main/accuracy', 'elapsed_time']) 
+                 'main/accuracy', 'validation/main/accuracy', 'elapsed_time'],
+                finish_mentions="@belltailjp")
 trainer.extend(r, trigger=(1, 'epoch'))
 ...
 trainer.run()
@@ -37,10 +38,12 @@ That makes you easily track how each process is going on.
 
 **Send a mention after the training finishes**
 
-You can pass Slack user ID(s) that begin with '@' to
-`finish_mentions` keyword argument of SlackReport initializer as
-either a str or a list, in order to let SlackReport send a mention
-notification after finishing the training process.
+You can pass Slack user IDs that begin with '@' to the `finish_mentions`
+keyword argument of the SlackReport initializer as either a str or a list,
+in order to let SlackReport send a mentioning message *after*
+finishing the training process,
+so that you can immediately notice the training has finished.<br/>
+If nothing is specified to `finish_mentions`, it just shows the final log.
 
 
 
