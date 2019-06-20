@@ -8,16 +8,33 @@ import requests
 import chainer
 
 
-def _post_or_update_message(params, update=False):
-    ep = "chat.update" if update else "chat.postMessage"
-    res = requests.post('https://slack.com/api/{}'.format(ep), data=params)
-    body = json.loads(res.text)
+def _slack_request(ep, method, params):
+    ep = 'https://slack.com/api/{}'.format(ep)
+    if method == 'get':
+        r = requests.get(ep, params=params)
+    elif method == 'post':
+        r = requests.post(ep, data=params)
+    body = json.loads(r.text)
     if not body['ok']:
         msg = body["error"]
         warnings.warn('SlackReport cannot connect to Slack: (error="{}")'
                       .format(msg))
         return None
     return body
+
+
+def _check_valid_token(access_token, channel_id):
+    if not access_token or not channel_id:    # None or empty
+        return False
+
+    params = {'token': access_token}
+    if not _slack_request('auth.test', 'get', params):
+        return False
+
+    params['channel'] = channel_id
+    if not _slack_request('channels.info', 'get', params):
+        return False
+    return True
 
 
 class SlackReport(chainer.training.extensions.PrintReport):
@@ -27,7 +44,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
             entries, log_report=log_report, out=io.StringIO())
         self._access_token = access_token
         self._channel_id = channel_id
-        self._available = self._check_valid_token(access_token, channel_id)
+        self._available = _check_valid_token(access_token, channel_id)
 
         self._completed = False
 
@@ -41,17 +58,6 @@ class SlackReport(chainer.training.extensions.PrintReport):
     @property
     def available(self):
         return self._available
-
-    def _check_valid_token(self, access_token, channel_id):
-        if not access_token or not channel_id:    # None or empty
-            return False
-
-        # Note: channel ID existence check won't be done, as it requires
-        # an additional premission just for it
-
-        params = {'token': access_token}
-        res = requests.post('https://slack.com/api/auth.test', data=params)
-        return res.status_code == 200 and json.loads(res.text)['ok']
 
     def _print(self, observation):
         if observation:     # None case: called from finalize or __init__
@@ -77,7 +83,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
         }
         if self._ts is None:
             # New post
-            res = _post_or_update_message(params)
+            res = _slack_request('chat.postMessage', 'post', params)
             if not res:
                 self._available = False
                 return
@@ -85,7 +91,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
         else:
             # Update the post
             params['ts'] = self._ts
-            if not _post_or_update_message(params, update=True):
+            if not _slack_request('chat.update', 'post', params):
                 self._available = False
 
     def finalize(self):
