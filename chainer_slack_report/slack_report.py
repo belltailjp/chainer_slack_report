@@ -29,12 +29,14 @@ class SlackReport(chainer.training.extensions.PrintReport):
         self._channel_id = channel_id
         self._available = self._check_valid_token(access_token, channel_id)
 
-        self._ts = None
         self._completed = False
 
         self._label = label
         if label is None:
             self._label = " ".join(sys.argv)
+
+        self._ts = None
+        self._print(None)   # Initial message
 
     @property
     def available(self):
@@ -52,24 +54,26 @@ class SlackReport(chainer.training.extensions.PrintReport):
         return res.status_code == 200 and json.loads(res.text)['ok']
 
     def _print(self, observation):
-        if observation:     # None case: called from finalize
+        if observation:     # None case: called from finalize or __init__
             super(SlackReport, self)._print(observation)
 
         if not self._available:
             return
 
         s = self._out.getvalue().replace('\x1b[J', '')  # Remove clear screen
-        s = "```{}```".format(s)
+        if s:
+            s = "```{}```".format(s)
+            status = "[_Training_]"
+        else:
+            status = "[_Started_]"
 
-        if self._label:
-            s = "{}\n{}".format(self._label, s)
         if self._completed:
-            s = "*[Completed]* " + s
+            status = "*[Completed]*"
 
         params = {
             'token': self._access_token,
             'channel': self._channel_id,
-            'text': s
+            'text': "{} {}\n{}".format(status, str(self._label), s)
         }
         if self._ts is None:
             # New post
