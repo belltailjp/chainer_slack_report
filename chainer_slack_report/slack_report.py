@@ -1,10 +1,23 @@
 import io
 import json
 import sys
+import warnings
 
 import requests
 
 import chainer
+
+
+def _post_or_update_message(params, update=False):
+    ep = "chat.update" if update else "chat.postMessage"
+    res = requests.post('https://slack.com/api/{}'.format(ep), data=params)
+    body = json.loads(res.text)
+    if not body['ok']:
+        msg = body["error"]
+        warnings.warn('SlackReport cannot connect to Slack: (error="{}")'
+                      .format(msg))
+        return None
+    return body
 
 
 class SlackReport(chainer.training.extensions.PrintReport):
@@ -30,6 +43,9 @@ class SlackReport(chainer.training.extensions.PrintReport):
     def _check_valid_token(self, access_token, channel_id):
         if not access_token or not channel_id:    # None or empty
             return False
+
+        # Note: channel ID existence check won't be done, as it requires
+        # an additional premission just for it
 
         params = {'token': access_token}
         res = requests.post('https://slack.com/api/auth.test', data=params)
@@ -57,20 +73,16 @@ class SlackReport(chainer.training.extensions.PrintReport):
         }
         if self._ts is None:
             # New post
-            res = requests.post('https://slack.com/api/chat.postMessage',
-                                data=params)
-            res = json.loads(res.text)
-            if not res['ok']:
+            res = _post_or_update_message(params)
+            if not res:
+                self._available = False
                 return
             self._ts = res['ts']
         else:
             # Update the post
             params['ts'] = self._ts
-            res = requests.post('https://slack.com/api/chat.update',
-                                data=params)
-            res = json.loads(res.text)
-            if not res['ok']:
-                return
+            if not _post_or_update_message(params, update=True):
+                self._available = False
 
     def finalize(self):
         self._completed = True
