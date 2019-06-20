@@ -1,6 +1,7 @@
 import io
 import json
 import sys
+import time
 import warnings
 
 import requests
@@ -37,9 +38,37 @@ def _check_valid_token(access_token, channel_id):
     return True
 
 
+def _name_to_id(access_token, names):
+    user_ids = dict()
+    cursor = None
+    while True:
+        params = {'token': access_token, 'cursor': cursor}
+        r = _slack_request('users.list', 'get', params)
+        if not r:
+            return []
+        user_ids = {**user_ids, **{m['name']: m['id'] for m in r['members']}}
+        cursor = r['response_metadata']['next_cursor']
+        if not cursor:
+            break
+        time.sleep(3)     # users.list is a Tier-2 API; 20+ requests/min
+
+    if isinstance(names, str):
+        names = [names]
+
+    ret = []
+    for name in names:
+        name = name.replace('@', '')
+        if name not in user_ids:
+            warnings.warn("The specified user @{} not found in the workspace"
+                          .format(name))
+            continue
+        ret.append("<@{}>".format(user_ids[name]))
+    return ret
+
+
 class SlackReport(chainer.training.extensions.PrintReport):
     def __init__(self, access_token, channel_id, entries,
-                 label=None, log_report='LogReport'):
+                 label=None, finish_mentions=[], log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
         self._access_token = access_token
@@ -47,6 +76,9 @@ class SlackReport(chainer.training.extensions.PrintReport):
         self._available = _check_valid_token(access_token, channel_id)
 
         self._completed = False
+        self._mentions = []
+        if self._available and len(finish_mentions):
+            self._mentions = _name_to_id(self._access_token, finish_mentions)
 
         self._label = label
         if label is None:
@@ -75,21 +107,21 @@ class SlackReport(chainer.training.extensions.PrintReport):
 
         if self._completed:
             status = "*[Completed]*"
+            if self._mentions:
+                status = " ".join(self._mentions) + " " + status
 
         params = {
             'token': self._access_token,
             'channel': self._channel_id,
             'text': "{} {}\n{}".format(status, str(self._label), s)
         }
-        if self._ts is None:
-            # New post
+        if not self._ts:    # New post
             res = _slack_request('chat.postMessage', 'post', params)
             if not res:
                 self._available = False
                 return
             self._ts = res['ts']
-        else:
-            # Update the post
+        else:               # Update the post
             params['ts'] = self._ts
             if not _slack_request('chat.update', 'post', params):
                 self._available = False
