@@ -19,16 +19,29 @@ trainer.run()
 
 ![screen](docs/screencast.gif)
 
+## Features
+
+**Collision-free Slack messages**
 
 The key feature (and difference between similar tools) of SlackReport is that
-it can handle multiple training streams without collapsing Slack screen.
+it can handle multiple training streams without collapsing Slack screen,
+as shown in the above screencast.
 
 In case you run many training processes in parallel
 and each of them uses SlackReport,
-the reports sent from each process are always summarized in a single message
-posted by a bot, without being mixed up with other processes' ones.
+the reported contents of each process are always summarized in a single message
+posted by a bot, without being mixed up with other processes'.
 
-Therefore you can easily track how each process is going on.
+That makes you easily track how each process is going on.
+
+
+**Send a mention after the training finishes**
+
+You can pass Slack user ID(s) that begin with '@' to
+`finish_mentions` keyword argument of SlackReport initializer as
+either a str or a list, in order to let SlackReport send a mention
+notification after finishing the training process.
+
 
 
 ## Install
@@ -46,7 +59,7 @@ Or
 
 ## Slack App preparation
 
-In order to get it work, you will first need to prepare for a bot account
+In order to get it work, you will first need to prepare for a bot user
 on your Slack workspace as explained in the following instruction.
 
 Access to https://api.slack.com/apps.
@@ -62,41 +75,48 @@ Then click the "Create App" button.
 ![Set app name and workspace](docs/02_app_name_and_workspace.png)
 
 
-The app you have created has no permission to access Slack yet
-so you have to configure it.
-Scroll down the window and click the "Permissions" button.
-![Go to permission screen](docs/03_permissions.png)
+Next, you have to tell Slack that you want the app to behave as a Bot.
+Scroll down the window and click the "Bots" button.
+![Go to bot creation screen](docs/03_bot_setting.png)
 
 
-Scroll down, and add the `chat:write:bot` permission.
-![Set permission](docs/04_permissions_select.png)
+Just click the "Add a Bot User" button.
+Here, Slack knows that your *app* is a *bot*.
+![Create a bot](docs/04_add_bot_user.png)
 
 
-You can now activate the app in your workspace
-by going back to the upper part of the screen
-and clicking the "Install..." button.
-![Install app](docs/05_install_app.png)
+You can name arbitrary display name and user name to the bot,
+except that the user name has to be valid as an identifier.
+![Create a bot](docs/05_fill_bot_info.png)
 
 
-Then you'll be redirected to a screen with Access Token.
+Next step is to activate the bot in your workspace
+in order to get a credential to access to Slack API.
+Go to "Install App" screen.
+![Install app](docs/06_install_page.png)
+
+![Install app](docs/07_click_bot_install.png)
+
+
+Then you'll be redirected to a screen with a bot Access Token (the bottom one).
 This is what you need to pass to `SlackReport`.
-![Token](docs/06_you_will_get_token.png)
+![Token](docs/08_got_token.png)
 
 
-Your app doesn't have an icon yet,
+By the way, your bot doesn't have an icon yet,
 so let's set it from the "Basic Information" screen.
-![Basic Information](docs/07_basic_information.png)
-![Set icon](docs/08_set_icon.png)
+![Basic Information](docs/09_basic_information.png)
+![Set icon](docs/10_set_icon.png)
 
 
-Here, your *Slack app* is ready!
+Here, your bot is ready!
 
-But you also have to identify Slack channel ID to send report to.
+You also have to identify Slack channel ID to send report to.
 
 On the Slack screen, you can find the channel ID by looking at full URL
 of the target channel.
 
-![Channel URL](docs/09_find_slack_channel_url.png)
+![Channel URL](docs/11_find_slack_channel_url.png)
 
 The copied URL will be like `https://WORKSPACE.slack.com/messages/CXXXXXXXX`,
 whose `CXXXXXXXX` part is the channel ID.
