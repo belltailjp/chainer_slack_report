@@ -44,7 +44,7 @@ def _check_valid_token(access_token, channel_id):
     return True
 
 
-def _name_to_id(access_token, names):
+def _name_to_mention(access_token, names):
     user_ids = dict()
     cursor = None
     while True:
@@ -69,14 +69,15 @@ def _name_to_id(access_token, names):
                           .format(name))
             continue
         ret.append("<@{}>".format(user_ids[name]))
-    return ret
+    return " ".join(ret)
 
 
 class SlackReport(chainer.training.extensions.PrintReport):
     def __init__(self, access_token, channel_id, entries,
                  template="${status} - ${elapsed} `${hostname}:${pwdshort}$ "
                           "${cmd} ${args}`\n"
-                          "${content}",
+                          "${content}\n"
+                          "${finish_mentions}",
                  finish_mentions=[], log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
@@ -85,15 +86,16 @@ class SlackReport(chainer.training.extensions.PrintReport):
         self._available = _check_valid_token(access_token, channel_id)
 
         self._completed = False
-        self._mentions = []
+        self._mention = ""
         if self._available and len(finish_mentions):
-            self._mentions = _name_to_id(self._access_token, finish_mentions)
+            self._mention = _name_to_mention(access_token, finish_mentions)
 
         self._start_time = datetime.now()
 
         # Check template format
         self._template = template
-        self._make_content(self._template, "content", "status", warn=True)
+        self._make_content(self._template, "content", "status", "mention",
+                           warn=True)
 
         self._ts = None
         self._print(None)   # Initial message
@@ -102,7 +104,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
     def available(self):
         return self._available
 
-    def _make_content(self, template, content, status, warn=True):
+    def _make_content(self, template, content, status, mention, warn=True):
         template = str(template)
 
         pwd = os.getcwd()
@@ -120,6 +122,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
         template = re.sub(r'\${args}', " ".join(sys.argv[1:]), template)
         template = re.sub(r'\${elapsed}', str(elapsed), template)
         template = re.sub(r'\${content}', content, template)
+        template = re.sub(r'\${finish_mentions}', mention, template)
         if warn:
             rest = re.findall(r'\${\w+}', template)
             if rest:
@@ -141,15 +144,15 @@ class SlackReport(chainer.training.extensions.PrintReport):
         else:
             status = "[_Started_]"
 
+        mention = ""
         if self._completed:
             status = "*[Completed]*"
-            if self._mentions:
-                status = " ".join(self._mentions) + " " + status
+            mention = self._mention
 
         params = {
             'token': self._access_token,
             'channel': self._channel_id,
-            'text': self._make_content(self._template, s, status)
+            'text': self._make_content(self._template, s, status, mention)
         }
         if not self._ts:    # New post
             res = _slack_request('chat.postMessage', 'post', params)
