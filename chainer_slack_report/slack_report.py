@@ -1,11 +1,14 @@
 import io
 import json
-import re
 import os
+import re
 import sys
 import socket
 import time
 import warnings
+
+from datetime import datetime
+from datetime import timedelta
 
 import requests
 
@@ -71,7 +74,9 @@ def _name_to_id(access_token, names):
 
 class SlackReport(chainer.training.extensions.PrintReport):
     def __init__(self, access_token, channel_id, entries,
-                 label="${status} `${hostname}:${pwdshort}$ ${cmd} ${args}`",
+                 template="${status} - ${elapsed} `${hostname}:${pwdshort}$ "
+                          "${cmd} ${args}`\n"
+                          "${content}",
                  finish_mentions=[], log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
@@ -84,8 +89,11 @@ class SlackReport(chainer.training.extensions.PrintReport):
         if self._available and len(finish_mentions):
             self._mentions = _name_to_id(self._access_token, finish_mentions)
 
-        self._label = label
-        self._make_label(self._label, "", warn=True)    # Just check format
+        self._start_time = datetime.now()
+
+        # Check template format
+        self._template = template
+        self._make_content(self._template, "content", "status", warn=True)
 
         self._ts = None
         self._print(None)   # Initial message
@@ -94,24 +102,30 @@ class SlackReport(chainer.training.extensions.PrintReport):
     def available(self):
         return self._available
 
-    def _make_label(self, label, status, warn=True):
-        label = str(label)
+    def _make_content(self, template, content, status, warn=True):
+        template = str(template)
 
         pwd = os.getcwd()
         pwdshort = pwd.replace(os.path.expanduser('~'), '~')
 
-        label = re.sub(r'\${status}', status, label)
-        label = re.sub(r'\${hostname}', socket.gethostname(), label)
-        label = re.sub(r'\${pwd}', os.getcwd(), label)
-        label = re.sub(r'\${pwdshort}', pwdshort, label)
-        label = re.sub(r'\${cmd}', sys.argv[0], label)
-        label = re.sub(r'\${args}', " ".join(sys.argv[1:]), label)
+        # Use only seconds
+        elapsed = datetime.now() - self._start_time
+        elapsed = timedelta(days=elapsed.days, seconds=elapsed.seconds)
+
+        template = re.sub(r'\${status}', status, template)
+        template = re.sub(r'\${hostname}', socket.gethostname(), template)
+        template = re.sub(r'\${pwd}', os.getcwd(), template)
+        template = re.sub(r'\${pwdshort}', pwdshort, template)
+        template = re.sub(r'\${cmd}', sys.argv[0], template)
+        template = re.sub(r'\${args}', " ".join(sys.argv[1:]), template)
+        template = re.sub(r'\${elapsed}', str(elapsed), template)
+        template = re.sub(r'\${content}', content, template)
         if warn:
-            rest = re.findall(r'\${\w+}', label)
+            rest = re.findall(r'\${\w+}', template)
             if rest:
-                warnings.warn("Unknown label variable(s) specified: {}"
+                warnings.warn("Unknown template variable(s) specified: {}"
                               .format(", ".join(rest)))
-        return label
+        return template
 
     def _print(self, observation):
         if observation:     # None case: called from finalize or __init__
@@ -132,11 +146,10 @@ class SlackReport(chainer.training.extensions.PrintReport):
             if self._mentions:
                 status = " ".join(self._mentions) + " " + status
 
-        label = self._make_label(self._label, status)
         params = {
             'token': self._access_token,
             'channel': self._channel_id,
-            'text': "{}\n{}".format(label, s)
+            'text': self._make_content(self._template, s, status)
         }
         if not self._ts:    # New post
             res = _slack_request('chat.postMessage', 'post', params)
