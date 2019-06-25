@@ -1,6 +1,9 @@
 import io
 import json
+import re
+import os
 import sys
+import socket
 import time
 import warnings
 
@@ -68,7 +71,8 @@ def _name_to_id(access_token, names):
 
 class SlackReport(chainer.training.extensions.PrintReport):
     def __init__(self, access_token, channel_id, entries,
-                 label=None, finish_mentions=[], log_report='LogReport'):
+                 label="${status} `${hostname}:${pwdshort}$ ${cmd} ${args}`",
+                 finish_mentions=[], log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
         self._access_token = access_token
@@ -81,8 +85,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
             self._mentions = _name_to_id(self._access_token, finish_mentions)
 
         self._label = label
-        if label is None:
-            self._label = " ".join(sys.argv)
+        self._make_label(self._label, "", warn=True)    # Just check format
 
         self._ts = None
         self._print(None)   # Initial message
@@ -90,6 +93,25 @@ class SlackReport(chainer.training.extensions.PrintReport):
     @property
     def available(self):
         return self._available
+
+    def _make_label(self, label, status, warn=True):
+        label = str(label)
+
+        pwd = os.getcwd()
+        pwdshort = pwd.replace(os.path.expanduser('~'), '~')
+
+        label = re.sub(r'\${status}', status, label)
+        label = re.sub(r'\${hostname}', socket.gethostname(), label)
+        label = re.sub(r'\${pwd}', os.getcwd(), label)
+        label = re.sub(r'\${pwdshort}', pwdshort, label)
+        label = re.sub(r'\${cmd}', sys.argv[0], label)
+        label = re.sub(r'\${args}', " ".join(sys.argv[1:]), label)
+        if warn:
+            rest = re.findall(r'\${\w+}', label)
+            if rest:
+                warnings.warn("Unknown label variable(s) specified: {}"
+                              .format(", ".join(rest)))
+        return label
 
     def _print(self, observation):
         if observation:     # None case: called from finalize or __init__
@@ -110,10 +132,11 @@ class SlackReport(chainer.training.extensions.PrintReport):
             if self._mentions:
                 status = " ".join(self._mentions) + " " + status
 
+        label = self._make_label(self._label, status)
         params = {
             'token': self._access_token,
             'channel': self._channel_id,
-            'text': "{} {}\n{}".format(status, str(self._label), s)
+            'text': "{}\n{}".format(label, s)
         }
         if not self._ts:    # New post
             res = _slack_request('chat.postMessage', 'post', params)
@@ -125,6 +148,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
             params['ts'] = self._ts
             if not _slack_request('chat.update', 'post', params):
                 self._available = False
+            # TODO: deal with the case where the post no longer exists
 
     def finalize(self):
         self._completed = True
