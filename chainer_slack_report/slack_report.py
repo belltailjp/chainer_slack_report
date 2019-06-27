@@ -112,7 +112,6 @@ _len_normalizers = {
     'thin_out': _thin_out_text,
     'truncate_newest': _truncate_newest,
     'truncate_oldest': _truncate_oldest,
-    'text_attachment': lambda s, formatter, length: formatter(s)
 }
 
 
