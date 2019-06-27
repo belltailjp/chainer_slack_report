@@ -82,7 +82,7 @@ class _IgnoreMissingDict(dict):
 
 def _thin_out_text(s, formatter, length):
     _s = formatter(s)
-    lines = s.splitlines()
+    lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
     step = 1
     while length < len(_s.encode('utf-8')):
         _s = formatter("\n".join([lines[0]] + lines[1::step]))
@@ -92,7 +92,7 @@ def _thin_out_text(s, formatter, length):
 
 def _truncate_newest(s, formatter, length):
     _s = formatter(s)
-    lines = s.splitlines()
+    lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
     while length < len(_s.encode('utf-8')):
         lines = lines[:-1]
         _s = formatter("\n".join(lines))
@@ -101,7 +101,7 @@ def _truncate_newest(s, formatter, length):
 
 def _truncate_oldest(s, formatter, length):
     _s = formatter(s)
-    lines = s.splitlines()
+    lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
     while length < len(_s.encode('utf-8')):
         del lines[1]
         _s = formatter("\n".join(lines))
@@ -195,7 +195,6 @@ class SlackReport(chainer.training.extensions.PrintReport):
             return
 
         s = self._out.getvalue().replace('\x1b[J', '')  # Remove clear screen
-        s = re.sub(r' +$', '', s)
         status = "[_Training_]" if s else "[_Started_]"
 
         mention = ""
