@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import re
 import sys
 import socket
 import time
@@ -79,13 +80,50 @@ class _IgnoreMissingDict(dict):
         return '{' + k + '}'
 
 
+def _thin_out_text(s, formatter, length):
+    _s = formatter(s)
+    lines = s.splitlines()
+    step = 1
+    while length < len(_s.encode('utf-8')):
+        _s = formatter("\n".join([lines[0]] + lines[1::step]))
+        step += 1
+    return _s
+
+
+def _truncate_newest(s, formatter, length):
+    _s = formatter(s)
+    lines = s.splitlines()
+    while length < len(_s.encode('utf-8')):
+        lines = lines[:-1]
+        _s = formatter("\n".join(lines))
+    return _s
+
+
+def _truncate_oldest(s, formatter, length):
+    _s = formatter(s)
+    lines = s.splitlines()
+    while length < len(_s.encode('utf-8')):
+        del lines[1]
+        _s = formatter("\n".join(lines))
+    return _s
+
+
+_len_normalizers = {
+    'thin_out': _thin_out_text,
+    'truncate_newest': _truncate_newest,
+    'truncate_oldest': _truncate_oldest,
+    'text_attachment': lambda s, formatter, length: formatter(s)
+}
+
+
 class SlackReport(chainer.training.extensions.PrintReport):
     def __init__(self, access_token, channel_id, entries,
                  template="{status} - {elapsed} `{hostname}:{pwdshort}$ "
                           "{cmd} {args}`\n"
                           "{content}\n"
                           "{finish_mentions}",
-                 finish_mentions=[], log_report='LogReport'):
+                 finish_mentions=[], length_limit_action='thin_out',
+                 log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
         self._access_token = access_token
@@ -104,6 +142,14 @@ class SlackReport(chainer.training.extensions.PrintReport):
         self._make_content(self._template, "content", "status", "mention",
                            warn=True)
 
+        if length_limit_action not in _len_normalizers:
+            msg = "Unknown value {} is specified to length_limit_action.\n" \
+                  "Available values: {}" \
+                  .format(length_limit_action,
+                          ", ".join(_len_normalizers.keys()))
+            raise ValueError(msg)
+        self._len_norm = _len_normalizers[length_limit_action]
+
         self._ts = None
         self._print(None)   # Initial message
 
@@ -121,6 +167,9 @@ class SlackReport(chainer.training.extensions.PrintReport):
         elapsed = datetime.now() - self._start_time
         elapsed = timedelta(days=elapsed.days, seconds=elapsed.seconds)
 
+        # # Use quote only if there already is a body content
+        if len(content):
+            content = "```{}```".format(content)
         fmt = _IgnoreMissingDict({
             'status': status,
             'hostname': socket.gethostname(),
@@ -146,21 +195,21 @@ class SlackReport(chainer.training.extensions.PrintReport):
             return
 
         s = self._out.getvalue().replace('\x1b[J', '')  # Remove clear screen
-        if s:
-            s = "```{}```".format(s)
-            status = "[_Training_]"
-        else:
-            status = "[_Started_]"
+        s = re.sub(r' +$', '', s)
+        status = "[_Training_]" if s else "[_Started_]"
 
         mention = ""
         if self._completed:
             status = "*[Completed]*"
             mention = self._mention
 
+        def formatter(s):
+            return self._make_content(self._template, s, status, mention)
+
         params = {
             'token': self._access_token,
             'channel': self._channel_id,
-            'text': self._make_content(self._template, s, status, mention)
+            'text': self._len_norm(s, formatter, length=4000)
         }
         if not self._ts:    # New post
             res = _slack_request('chat.postMessage', 'post', params)
