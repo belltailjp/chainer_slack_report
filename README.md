@@ -46,6 +46,29 @@ so that you can immediately notice the training has finished.<br/>
 If nothing is specified to `finish_mentions`, it just shows the final log.
 
 
+**Custom report format**
+
+You can customize what information to report to Slack by specifying
+a format string to the `template` argument.
+
+```
+r = SlackReport(SLACK_ACCESS_TOKEN, SLACK_CHANNEL_ID, ...
+                template="{status} {content}")
+```
+Named placeholders (`"{...}"`) are available, which are listed below,
+and the template is processed by Python's standard string formatter (`str.format_map`).
+In case an unknown placeholder is specified, it'll be kept as it is with a warning.
+
+- `{status}`: Status string (eg. `[Completed]`, `[Training]`)
+- `{hostname}`: Hostname of where the training is running on
+- `{pwd}`: Current directory (full path)
+- `{pwdshort}`: Current directory whose home part is replaced by `~`
+- `{cmd}`: argv[0]
+- `{args}`: argv[1:]
+- `{elapsed}`: Elapsed time from the `SlackReport` instance is created (in sec)
+- `{content}`: Main content of the reports
+- `{finish_mentions}`: Slack mention (appears after the training finished)
+
 
 ## Install
 
