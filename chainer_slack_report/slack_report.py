@@ -1,7 +1,6 @@
 import io
 import json
 import os
-import re
 import sys
 import socket
 import time
@@ -72,12 +71,20 @@ def _name_to_mention(access_token, names):
     return " ".join(ret)
 
 
+class _IgnoreMissingDict(dict):
+    def __missing__(self, k):
+        if not hasattr(self, 'missings'):
+            self.missings = []
+        self.missings.append(k)
+        return '{' + k + '}'
+
+
 class SlackReport(chainer.training.extensions.PrintReport):
     def __init__(self, access_token, channel_id, entries,
-                 template="${status} - ${elapsed} `${hostname}:${pwdshort}$ "
-                          "${cmd} ${args}`\n"
-                          "${content}\n"
-                          "${finish_mentions}",
+                 template="{status} - {elapsed} `{hostname}:{pwdshort}$ "
+                          "{cmd} {args}`\n"
+                          "{content}\n"
+                          "{finish_mentions}",
                  finish_mentions=[], log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
@@ -114,20 +121,21 @@ class SlackReport(chainer.training.extensions.PrintReport):
         elapsed = datetime.now() - self._start_time
         elapsed = timedelta(days=elapsed.days, seconds=elapsed.seconds)
 
-        template = re.sub(r'\${status}', status, template)
-        template = re.sub(r'\${hostname}', socket.gethostname(), template)
-        template = re.sub(r'\${pwd}', os.getcwd(), template)
-        template = re.sub(r'\${pwdshort}', pwdshort, template)
-        template = re.sub(r'\${cmd}', sys.argv[0], template)
-        template = re.sub(r'\${args}', " ".join(sys.argv[1:]), template)
-        template = re.sub(r'\${elapsed}', str(elapsed), template)
-        template = re.sub(r'\${content}', content, template)
-        template = re.sub(r'\${finish_mentions}', mention, template)
-        if warn:
-            rest = re.findall(r'\${\w+}', template)
-            if rest:
-                warnings.warn("Unknown template variable(s) specified: {}"
-                              .format(", ".join(rest)))
+        fmt = _IgnoreMissingDict({
+            'status': status,
+            'hostname': socket.gethostname(),
+            'pwd': os.getcwd(),
+            'pwdshort': pwdshort,
+            'cmd': sys.argv[0],
+            'args': " ".join(sys.argv[1:]),
+            'elapsed': str(elapsed),
+            'content': content,
+            'finish_mentions': mention
+        })
+        template = template.format_map(fmt)
+        if warn and hasattr(fmt, 'missings'):
+            warnings.warn("Unknown template variable(s) specified: {}"
+                          .format(", ".join(fmt.missings)))
         return template
 
     def _print(self, observation):
