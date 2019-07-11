@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import re
 import sys
 import socket
 import time
@@ -79,13 +80,29 @@ class _IgnoreMissingDict(dict):
         return '{' + k + '}'
 
 
+def _thin_out(lines, i):
+    return [lines[j] for j in range(0, len(lines), i)]
+
+
+def _lifo(lines, i):
+    return lines[:-i]
+
+
+def _fifo(lines, i):
+    return lines[i:]
+
+
+_len_normalizers = {'thin_out': _thin_out, 'lifo': _lifo, 'fifo': _fifo}
+
+
 class SlackReport(chainer.training.extensions.PrintReport):
     def __init__(self, access_token, channel_id, entries,
                  template="{status} - {elapsed} `{hostname}:{pwdshort}$ "
                           "{cmd} {args}`\n"
                           "{content}\n"
                           "{finish_mentions}",
-                 finish_mentions=[], log_report='LogReport'):
+                 finish_mentions=[], len_normalizer='thin_out',
+                 log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
         self._access_token = access_token
@@ -98,6 +115,14 @@ class SlackReport(chainer.training.extensions.PrintReport):
             self._mention = _name_to_mention(access_token, finish_mentions)
 
         self._start_time = datetime.now()
+
+        len_normalizer = len_normalizer.lower()
+        if len_normalizer not in _len_normalizers:
+            msg = "Unknown value {} is specified to len_normalizer.\n" \
+                  "Available values: {}" \
+                  .format(len_normalizer, ", ".join(_len_normalizers.keys()))
+            raise ValueError(msg)
+        self._len_norm = _len_normalizers[len_normalizer]
 
         # Check template format
         self._template = template
@@ -117,7 +142,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
         pwd = os.getcwd()
         pwdshort = pwd.replace(os.path.expanduser('~'), '~')
 
-        # Use only seconds
+        # Use only seconds (ignore sub-seconds)
         elapsed = datetime.now() - self._start_time
         elapsed = timedelta(days=elapsed.days, seconds=elapsed.seconds)
 
@@ -129,14 +154,26 @@ class SlackReport(chainer.training.extensions.PrintReport):
             'cmd': sys.argv[0],
             'args': " ".join(sys.argv[1:]),
             'elapsed': str(elapsed),
-            'content': content,
+            'content': "```{}```".format(content) if content else "",
             'finish_mentions': mention
         })
-        template = template.format_map(fmt)
+
+        # Normalize the content to make the whole report fit to 4000 bytes
+        s = template.format_map(fmt)
+
+        lines = [re.sub(r' +$', '', l) for l in content.splitlines()]
+        header, lines = lines[:1], lines[1:]
+        i_try = 1
+        while 4000 < len(s.encode('utf-8')):
+            content = "\n".join(header + self._len_norm(lines, i_try))
+            fmt['content'] = "```{}```".format(content)
+            s = template.format_map(fmt)
+            i_try += 1
+
         if warn and hasattr(fmt, 'missings'):
             warnings.warn("Unknown template variable(s) specified: {}"
                           .format(", ".join(fmt.missings)))
-        return template
+        return s
 
     def _print(self, observation):
         if observation:     # None case: called from finalize or __init__
@@ -146,11 +183,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
             return
 
         s = self._out.getvalue().replace('\x1b[J', '')  # Remove clear screen
-        if s:
-            s = "```{}```".format(s)
-            status = "[_Training_]"
-        else:
-            status = "[_Started_]"
+        status = "[_Training_]" if s else "[_Started_]"
 
         mention = ""
         if self._completed:

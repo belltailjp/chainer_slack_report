@@ -36,6 +36,19 @@ posted by a bot, without being mixed up with other processes'.
 That makes you easily track how each process is going on.
 
 
+**Slack message length limit aware**
+
+Basically Slack limits message length to be less than 4000 bytes,
+but training reports can easily exceed it if you send everything.
+chainer-slack-report automatically deals with this by a strategy
+you specified to `len_normalizer` arguments.
+- `"thin_out"`: (default) Skip a few lines uniformly, by automatically determine an optimal interval
+- `"FIFO"`: Throw the oldest lines away
+- `"LIFO"`: Stop new contents to be added
+
+The first line of the content, which is table header, is always kept on top regardless of the storategy.
+
+
 **Send a mention after the training finishes**
 
 You can pass Slack user IDs that begin with '@' to the `finish_mentions`
