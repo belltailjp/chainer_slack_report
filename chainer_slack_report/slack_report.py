@@ -158,13 +158,10 @@ class SlackReport(chainer.training.extensions.PrintReport):
         pwd = os.getcwd()
         pwdshort = pwd.replace(os.path.expanduser('~'), '~')
 
-        # Use only seconds
+        # Use only seconds (ignore sub-seconds)
         elapsed = datetime.now() - self._start_time
         elapsed = timedelta(days=elapsed.days, seconds=elapsed.seconds)
 
-        # # Use quote only if there already is a body content
-        if len(content):
-            content = "```{}```".format(content)
         fmt = _IgnoreMissingDict({
             'status': status,
             'hostname': socket.gethostname(),
@@ -173,7 +170,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
             'cmd': sys.argv[0],
             'args': " ".join(sys.argv[1:]),
             'elapsed': str(elapsed),
-            'content': content,
+            'content': "```{}```".format(content) if content else "",
             'finish_mentions': mention
         })
         template = template.format_map(fmt)
