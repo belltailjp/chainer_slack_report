@@ -5,6 +5,7 @@ import re
 import sys
 import socket
 import time
+import traceback
 import warnings
 
 from datetime import datetime
@@ -176,36 +177,43 @@ class SlackReport(chainer.training.extensions.PrintReport):
         return s
 
     def _print(self, observation):
-        if observation:     # None case: called from finalize or __init__
-            super(SlackReport, self)._print(observation)
+        try:
+            if observation:     # None case: called from finalize or __init__
+                super(SlackReport, self)._print(observation)
 
-        if not self._available:
-            return
-
-        s = self._out.getvalue().replace('\x1b[J', '')  # Remove clear screen
-        status = "[_Training_]" if s else "[_Started_]"
-
-        mention = ""
-        if self._completed:
-            status = "*[Completed]*"
-            mention = self._mention
-
-        params = {
-            'token': self._access_token,
-            'channel': self._channel_id,
-            'text': self._make_content(self._template, s, status, mention)
-        }
-        if not self._ts:    # New post
-            res = _slack_request('chat.postMessage', 'post', params)
-            if not res:
-                self._available = False
+            if not self._available:
                 return
-            self._ts = res['ts']
-        else:               # Update the post
-            params['ts'] = self._ts
-            if not _slack_request('chat.update', 'post', params):
-                self._available = False
-            # TODO: deal with the case where the post no longer exists
+
+            s = self._out.getvalue().replace('\x1b[J', '')  # Remove CLS
+            status = "[_Training_]" if s else "[_Started_]"
+
+            mention = ""
+            if self._completed:
+                status = "*[Completed]*"
+                mention = self._mention
+
+            params = {
+                'token': self._access_token,
+                'channel': self._channel_id,
+                'text': self._make_content(self._template, s, status, mention)
+            }
+            if not self._ts:    # New post
+                res = _slack_request('chat.postMessage', 'post', params)
+                if not res:
+                    self._available = False
+                    return
+                self._ts = res['ts']
+            else:               # Update the post
+                params['ts'] = self._ts
+                if not _slack_request('chat.update', 'post', params):
+                    self._available = False
+                # TODO: deal with the case where the post no longer exists
+
+        except Exception as e:
+            # Even if the SlackReport dies with an unknown error,
+            # it should never stop the whole process!
+            tb = "\n".join(traceback.format_tb(e.__traceback__))
+            warnings.warn("{}\n{}".format(str(e), tb))
 
     def finalize(self):
         self._completed = True
