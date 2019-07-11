@@ -80,32 +80,16 @@ class _IgnoreMissingDict(dict):
         return '{' + k + '}'
 
 
-def _thin_out(s, formatter, length):
-    _s = formatter(s)
-    lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
-    step = 1
-    while length < len(_s.encode('utf-8')):
-        _s = formatter("\n".join([lines[0]] + lines[1::step]))
-        step += 1
-    return _s
+def _thin_out(lines, i):
+    return [lines[j] for j in range(0, len(lines), i)]
 
 
-def _lifo(s, formatter, length):
-    _s = formatter(s)
-    lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
-    while length < len(_s.encode('utf-8')):
-        lines = lines[:-1]
-        _s = formatter("\n".join(lines))
-    return _s
+def _lifo(lines, i):
+    return lines[:-i]
 
 
-def _fifo(s, formatter, length):
-    _s = formatter(s)
-    lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
-    while length < len(_s.encode('utf-8')):
-        del lines[1]
-        _s = formatter("\n".join(lines))
-    return _s
+def _fifo(lines, i):
+    return lines[i:]
 
 
 _len_normalizers = {'thin_out': _thin_out, 'lifo': _lifo, 'fifo': _fifo}
@@ -132,11 +116,6 @@ class SlackReport(chainer.training.extensions.PrintReport):
 
         self._start_time = datetime.now()
 
-        # Check template format
-        self._template = template
-        self._make_content(self._template, "content", "status", "mention",
-                           warn=True)
-
         len_normalizer = len_normalizer.lower()
         if len_normalizer not in _len_normalizers:
             msg = "Unknown value {} is specified to len_normalizer.\n" \
@@ -144,6 +123,11 @@ class SlackReport(chainer.training.extensions.PrintReport):
                   .format(len_normalizer, ", ".join(_len_normalizers.keys()))
             raise ValueError(msg)
         self._len_norm = _len_normalizers[len_normalizer]
+
+        # Check template format
+        self._template = template
+        self._make_content(self._template, "content", "status", "mention",
+                           warn=True)
 
         self._ts = None
         self._print(None)   # Initial message
@@ -173,11 +157,23 @@ class SlackReport(chainer.training.extensions.PrintReport):
             'content': "```{}```".format(content) if content else "",
             'finish_mentions': mention
         })
-        template = template.format_map(fmt)
+
+        # Normalize the content to make the whole report fit to 4000 bytes
+        s = template.format_map(fmt)
+
+        lines = [re.sub(r' +$', '', l) for l in content.splitlines()]
+        header, lines = lines[:1], lines[1:]
+        i_try = 1
+        while 4000 < len(s.encode('utf-8')):
+            content = "\n".join(header + self._len_norm(lines, i_try))
+            fmt['content'] = "```{}```".format(content)
+            s = template.format_map(fmt)
+            i_try += 1
+
         if warn and hasattr(fmt, 'missings'):
             warnings.warn("Unknown template variable(s) specified: {}"
                           .format(", ".join(fmt.missings)))
-        return template
+        return s
 
     def _print(self, observation):
         if observation:     # None case: called from finalize or __init__
@@ -194,13 +190,10 @@ class SlackReport(chainer.training.extensions.PrintReport):
             status = "*[Completed]*"
             mention = self._mention
 
-        def formatter(s):
-            return self._make_content(self._template, s, status, mention)
-
         params = {
             'token': self._access_token,
             'channel': self._channel_id,
-            'text': self._len_norm(s, formatter, length=4000)
+            'text': self._make_content(self._template, s, status, mention)
         }
         if not self._ts:    # New post
             res = _slack_request('chat.postMessage', 'post', params)
