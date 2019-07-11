@@ -80,7 +80,7 @@ class _IgnoreMissingDict(dict):
         return '{' + k + '}'
 
 
-def _thin_out_text(s, formatter, length):
+def _thin_out(s, formatter, length):
     _s = formatter(s)
     lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
     step = 1
@@ -90,7 +90,7 @@ def _thin_out_text(s, formatter, length):
     return _s
 
 
-def _truncate_newest(s, formatter, length):
+def _lifo(s, formatter, length):
     _s = formatter(s)
     lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
     while length < len(_s.encode('utf-8')):
@@ -99,7 +99,7 @@ def _truncate_newest(s, formatter, length):
     return _s
 
 
-def _truncate_oldest(s, formatter, length):
+def _fifo(s, formatter, length):
     _s = formatter(s)
     lines = [re.sub(r' +$', '', l) for l in s.splitlines()]
     while length < len(_s.encode('utf-8')):
@@ -108,11 +108,7 @@ def _truncate_oldest(s, formatter, length):
     return _s
 
 
-_len_normalizers = {
-    'thin_out': _thin_out_text,
-    'truncate_newest': _truncate_newest,
-    'truncate_oldest': _truncate_oldest,
-}
+_len_normalizers = {'thin_out': _thin_out, 'lifo': _lifo, 'fifo': _fifo}
 
 
 class SlackReport(chainer.training.extensions.PrintReport):
@@ -121,7 +117,7 @@ class SlackReport(chainer.training.extensions.PrintReport):
                           "{cmd} {args}`\n"
                           "{content}\n"
                           "{finish_mentions}",
-                 finish_mentions=[], length_limit_action='thin_out',
+                 finish_mentions=[], len_normalizer='thin_out',
                  log_report='LogReport'):
         super(SlackReport, self).__init__(
             entries, log_report=log_report, out=io.StringIO())
@@ -141,13 +137,13 @@ class SlackReport(chainer.training.extensions.PrintReport):
         self._make_content(self._template, "content", "status", "mention",
                            warn=True)
 
-        if length_limit_action not in _len_normalizers:
-            msg = "Unknown value {} is specified to length_limit_action.\n" \
+        len_normalizer = len_normalizer.lower()
+        if len_normalizer not in _len_normalizers:
+            msg = "Unknown value {} is specified to len_normalizer.\n" \
                   "Available values: {}" \
-                  .format(length_limit_action,
-                          ", ".join(_len_normalizers.keys()))
+                  .format(len_normalizer, ", ".join(_len_normalizers.keys()))
             raise ValueError(msg)
-        self._len_norm = _len_normalizers[length_limit_action]
+        self._len_norm = _len_normalizers[len_normalizer]
 
         self._ts = None
         self._print(None)   # Initial message
