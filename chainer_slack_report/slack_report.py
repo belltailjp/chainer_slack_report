@@ -53,7 +53,9 @@ def _name_to_mention(access_token, names):
         r = _slack_request('users.list', 'get', params)
         if not r:
             return []
-        user_ids = {**user_ids, **{m['name']: m['id'] for m in r['members']}}
+        user_ids = {**user_ids,
+                    **{m['name']: m['id']
+                       for m in r['members'] if not m['deleted']}}
         cursor = r['response_metadata']['next_cursor']
         if not cursor:
             break
